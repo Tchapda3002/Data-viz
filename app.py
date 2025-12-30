@@ -9,7 +9,10 @@ import dash_bootstrap_components as dbc
 
 app = Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_stylesheets=[
+        dbc.themes.BOOTSTRAP,
+        "/assets/app_styles.css"  # ← Ajoute cette ligne
+    ],
     suppress_callback_exceptions=True,
     use_pages=True,
     pages_folder="pages"
@@ -23,7 +26,7 @@ app.layout = dbc.Container([
         dbc.Col([
             html.Div([
                 html.Div([
-                    html.H1("RISK ANALYZER", className="app-title"),
+                    html.H1("Projet Data Visualisation", className="app-title"),
                     html.P("Système d'analyse et prédiction du risque crédit microfinance", 
                            className="app-subtitle"),
                 ], className="header-content"),
@@ -58,11 +61,11 @@ app.layout = dbc.Container([
     # Footer minimaliste
     html.Footer([
         html.Div([
-            html.Span("Projet Data visualisation", className="footer-text"),
+            html.Span("Wilfred Rod TCHAPDA KOUADJO", className="footer-text"),
             html.Span(" · ", className="footer-separator"),
             html.Span("ENSAE Dakar", className="footer-text"),
             html.Span(" · ", className="footer-separator"),
-            html.Span("2024-2025", className="footer-text"),
+            html.Span("2025-2026", className="footer-text"),
         ], className="footer-content")
     ], className="app-footer")
     

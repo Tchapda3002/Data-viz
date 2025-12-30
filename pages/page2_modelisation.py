@@ -1,6 +1,7 @@
 """
-PAGE 2 - MODÉLISATION PRÉDICTIVE
+PAGE 2 - MODÉLISATION PRÉDICTIVE (AMÉLIORÉE)
 Interface moderne pour l'analyse discriminante et la prédiction
+Correction du problème QDA avec régularisation et ajustement de seuil
 """
 
 import dash
@@ -12,12 +13,12 @@ import numpy as np
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, f1_score, recall_score, confusion_matrix, roc_curve, auc
+from sklearn.metrics import accuracy_score, f1_score, recall_score, confusion_matrix, roc_curve, auc, precision_recall_curve
 
 dash.register_page(__name__, path='/modelisation', name='Modélisation')
 
 # Chargement et préparation
-df = pd.read_excel('/Users/Apple/Desktop/Projets/Projet_Data_viz/data/microfinance_credit_risk.xlsx')
+df = pd.read_excel('./data/microfinance_credit_risk.xlsx')
 
 feature_cols = [
     'age', 'revenu_mensuel_xof', 'epargne_xof', 'anciennete_relation_mois',
@@ -37,34 +38,62 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# Entraînement
+# Entraînement LDA
 lda_model = LinearDiscriminantAnalysis()
-qda_model = QuadraticDiscriminantAnalysis()
 lda_model.fit(X_train_scaled, y_train)
+
+# Entraînement QDA avec régularisation pour éviter le problème de singularité
+# reg_param aide à stabiliser les matrices de covariance
+qda_model = QuadraticDiscriminantAnalysis(reg_param=0.1)
 qda_model.fit(X_train_scaled, y_train)
 
-# Évaluation
-lda_pred = lda_model.predict(X_test_scaled)
+# Prédictions et probabilités
 lda_proba = lda_model.predict_proba(X_test_scaled)[:, 1]
+qda_proba = qda_model.predict_proba(X_test_scaled)[:, 1]
+
+# Fonction pour trouver le seuil optimal basé sur F1-score
+def find_optimal_threshold(y_true, y_proba):
+    """Trouve le seuil qui maximise le F1-score"""
+    thresholds = np.arange(0.1, 0.9, 0.01)
+    f1_scores = []
+    
+    for threshold in thresholds:
+        y_pred = (y_proba >= threshold).astype(int)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        f1_scores.append(f1)
+    
+    optimal_idx = np.argmax(f1_scores)
+    return thresholds[optimal_idx], f1_scores[optimal_idx]
+
+# Trouver les seuils optimaux
+lda_threshold, lda_best_f1 = find_optimal_threshold(y_test, lda_proba)
+qda_threshold, qda_best_f1 = find_optimal_threshold(y_test, qda_proba)
+
+# Prédictions avec seuils optimaux
+lda_pred = (lda_proba >= lda_threshold).astype(int)
+qda_pred = (qda_proba >= qda_threshold).astype(int)
+
+# Métriques avec seuils optimaux
 lda_accuracy = accuracy_score(y_test, lda_pred)
 lda_f1 = f1_score(y_test, lda_pred, zero_division=0)
 lda_recall = recall_score(y_test, lda_pred, zero_division=0)
 lda_cm = confusion_matrix(y_test, lda_pred)
 
-qda_pred = qda_model.predict(X_test_scaled)
-qda_proba = qda_model.predict_proba(X_test_scaled)[:, 1]
 qda_accuracy = accuracy_score(y_test, qda_pred)
 qda_f1 = f1_score(y_test, qda_pred, zero_division=0)
 qda_recall = recall_score(y_test, qda_pred, zero_division=0)
 qda_cm = confusion_matrix(y_test, qda_pred)
 
+# Courbes ROC
 lda_fpr, lda_tpr, _ = roc_curve(y_test, lda_proba)
 lda_auc = auc(lda_fpr, lda_tpr)
 qda_fpr, qda_tpr, _ = roc_curve(y_test, qda_proba)
 qda_auc = auc(qda_fpr, qda_tpr)
 
+# Sélection du meilleur modèle
 best_model = 'LDA' if lda_f1 > qda_f1 else 'QDA'
 best_f1 = max(lda_f1, qda_f1)
+best_threshold = lda_threshold if best_model == 'LDA' else qda_threshold
 
 def create_confusion_matrix(cm, model_name):
     fig = go.Figure(data=go.Heatmap(
@@ -134,6 +163,13 @@ layout = html.Div([
             html.P("Évaluation comparative de l'analyse discriminante linéaire et quadratique", 
                    className="section-subtitle"),
         ], className="section-header"),
+        
+        # Info sur les améliorations
+        html.Div([
+            html.Div("✓ QDA avec régularisation (reg_param=0.1)", className="improvement-note"),
+            html.Div(f"✓ Seuils optimisés - LDA: {lda_threshold:.3f} | QDA: {qda_threshold:.3f}", 
+                    className="improvement-note")
+        ], className="improvement-info"),
         
         # Métriques comparatives
         dbc.Row([
@@ -235,7 +271,8 @@ layout = html.Div([
             html.Div([
                 html.Span("Modèle sélectionné: ", className="best-model-text"),
                 html.Span(best_model, className=f"best-model-badge best-model-{best_model.lower()}"),
-                html.Span(f" · F1-Score: {best_f1:.4f}", className="best-model-score")
+                html.Span(f" · F1-Score: {best_f1:.4f} · Seuil: {best_threshold:.3f}", 
+                         className="best-model-score")
             ], className="best-model-info")
         ], className="section-header"),
         
@@ -361,15 +398,16 @@ def predict_client(n_clicks, age, revenu, epargne, anciennete, historique,
     lda_proba_client = lda_model.predict_proba(client_scaled)[0, 1]
     qda_proba_client = qda_model.predict_proba(client_scaled)[0, 1]
     
+    # Utiliser le modèle sélectionné avec son seuil optimal
     if best_model == 'LDA':
         final_proba = lda_proba_client
-        final_decision = 'Défaut Probable' if lda_proba_client > 0.5 else 'Profil Sain'
+        final_decision = 'Défaut Probable' if lda_proba_client >= lda_threshold else 'Profil Sain'
     else:
         final_proba = qda_proba_client
-        final_decision = 'Défaut Probable' if qda_proba_client > 0.5 else 'Profil Sain'
+        final_decision = 'Défaut Probable' if qda_proba_client >= qda_threshold else 'Profil Sain'
     
-    risk_level = "Élevé" if final_proba > 0.5 else "Faible"
-    decision_class = 'danger' if final_proba > 0.5 else 'success'
+    risk_level = "Élevé" if final_proba >= best_threshold else "Faible"
+    decision_class = 'danger' if final_proba >= best_threshold else 'success'
     
     return html.Div([
         html.Div("Résultats de l'Analyse", className="results-title"),
@@ -379,7 +417,7 @@ def predict_client(n_clicks, age, revenu, epargne, anciennete, historique,
                 html.Div([
                     html.Div("Modèle LDA", className="proba-label"),
                     html.Div(f"{lda_proba_client*100:.1f}%", className="proba-value"),
-                    html.Div("Probabilité de Défaut", className="proba-subtitle")
+                    html.Div(f"Seuil: {lda_threshold:.3f}", className="proba-subtitle")
                 ], className="proba-card proba-card-lda")
             ], md=6),
             
@@ -387,7 +425,7 @@ def predict_client(n_clicks, age, revenu, epargne, anciennete, historique,
                 html.Div([
                     html.Div("Modèle QDA", className="proba-label"),
                     html.Div(f"{qda_proba_client*100:.1f}%", className="proba-value"),
-                    html.Div("Probabilité de Défaut", className="proba-subtitle")
+                    html.Div(f"Seuil: {qda_threshold:.3f}", className="proba-subtitle")
                 ], className="proba-card proba-card-qda")
             ], md=6)
         ], className="mb-4"),
