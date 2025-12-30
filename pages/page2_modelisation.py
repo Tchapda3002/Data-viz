@@ -1,7 +1,7 @@
 """
-PAGE 2 - MODÉLISATION PRÉDICTIVE (AMÉLIORÉE)
-Interface moderne pour l'analyse discriminante et la prédiction
-Correction du problème QDA avec régularisation et ajustement de seuil
+PAGE 2 - MODÉLISATION PRÉDICTIVE (AMÉLIORÉE AVEC LIGHTGBM)
+Interface moderne pour l'analyse discriminante et LightGBM
+Sélection automatique du meilleur modèle basé sur F1-score
 """
 
 import dash
@@ -14,6 +14,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticD
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, f1_score, recall_score, confusion_matrix, roc_curve, auc, precision_recall_curve
+from lightgbm import LGBMClassifier
 
 dash.register_page(__name__, path='/modelisation', name='Modélisation')
 
@@ -47,9 +48,21 @@ lda_model.fit(X_train_scaled, y_train)
 qda_model = QuadraticDiscriminantAnalysis(reg_param=0.1)
 qda_model.fit(X_train_scaled, y_train)
 
+# Entraînement LightGBM avec paramètres optimisés pour microfinance
+lgbm_model = LGBMClassifier(
+    n_estimators=100,
+    max_depth=5,
+    learning_rate=0.1,
+    num_leaves=31,
+    random_state=42,
+    verbose=-1
+)
+lgbm_model.fit(X_train_scaled, y_train)
+
 # Prédictions et probabilités
 lda_proba = lda_model.predict_proba(X_test_scaled)[:, 1]
 qda_proba = qda_model.predict_proba(X_test_scaled)[:, 1]
+lgbm_proba = lgbm_model.predict_proba(X_test_scaled)[:, 1]
 
 # Fonction pour trouver le seuil optimal basé sur F1-score
 def find_optimal_threshold(y_true, y_proba):
@@ -68,10 +81,12 @@ def find_optimal_threshold(y_true, y_proba):
 # Trouver les seuils optimaux
 lda_threshold, lda_best_f1 = find_optimal_threshold(y_test, lda_proba)
 qda_threshold, qda_best_f1 = find_optimal_threshold(y_test, qda_proba)
+lgbm_threshold, lgbm_best_f1 = find_optimal_threshold(y_test, lgbm_proba)
 
 # Prédictions avec seuils optimaux
 lda_pred = (lda_proba >= lda_threshold).astype(int)
 qda_pred = (qda_proba >= qda_threshold).astype(int)
+lgbm_pred = (lgbm_proba >= lgbm_threshold).astype(int)
 
 # Métriques avec seuils optimaux
 lda_accuracy = accuracy_score(y_test, lda_pred)
@@ -84,35 +99,51 @@ qda_f1 = f1_score(y_test, qda_pred, zero_division=0)
 qda_recall = recall_score(y_test, qda_pred, zero_division=0)
 qda_cm = confusion_matrix(y_test, qda_pred)
 
+lgbm_accuracy = accuracy_score(y_test, lgbm_pred)
+lgbm_f1 = f1_score(y_test, lgbm_pred, zero_division=0)
+lgbm_recall = recall_score(y_test, lgbm_pred, zero_division=0)
+lgbm_cm = confusion_matrix(y_test, lgbm_pred)
+
 # Courbes ROC
 lda_fpr, lda_tpr, _ = roc_curve(y_test, lda_proba)
 lda_auc = auc(lda_fpr, lda_tpr)
 qda_fpr, qda_tpr, _ = roc_curve(y_test, qda_proba)
 qda_auc = auc(qda_fpr, qda_tpr)
+lgbm_fpr, lgbm_tpr, _ = roc_curve(y_test, lgbm_proba)
+lgbm_auc = auc(lgbm_fpr, lgbm_tpr)
 
-# Sélection du meilleur modèle
-best_model = 'LDA' if lda_f1 > qda_f1 else 'QDA'
-best_f1 = max(lda_f1, qda_f1)
-best_threshold = lda_threshold if best_model == 'LDA' else qda_threshold
+# Sélection du meilleur modèle basé sur F1-score
+models_f1 = {'LDA': lda_f1, 'QDA': qda_f1, 'LGBM': lgbm_f1}
+best_model = max(models_f1, key=models_f1.get)
+best_f1 = models_f1[best_model]
+best_threshold = {'LDA': lda_threshold, 'QDA': qda_threshold, 'LGBM': lgbm_threshold}[best_model]
 
 def create_confusion_matrix(cm, model_name):
+    # Couleurs selon le modèle (Palette Sahel)
+    colors = {
+        'LDA': [[0, '#D9E9ED'], [1, '#4A7C8C']],    # Bleu fleuve
+        'QDA': [[0, '#E8DDD5'], [1, '#9C6B4E']],    # Ocre sahélien
+        'LGBM': [[0, '#D8E3D9'], [1, '#5A7C5E']]    # Vert baobab
+    }
+    colorscale = colors.get(model_name, [[0, '#FAF7F4'], [1, '#6B5D54']])
+
     fig = go.Figure(data=go.Heatmap(
         z=cm,
         x=['Prédit Sain', 'Prédit Défaut'],
         y=['Réel Sain', 'Réel Défaut'],
-        colorscale=[[0, '#e0f2fe'], [1, '#0891b2']],
+        colorscale=colorscale,
         text=cm,
         texttemplate='%{text}',
-        textfont={"size": 18, "color": "#1e293b"},
+        textfont={"size": 18, "color": "#342E29"},
         showscale=False,
         hovertemplate='%{y}<br>%{x}<br>Count: %{z}<extra></extra>'
     ))
-    
+
     fig.update_layout(
         template='plotly_white',
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font={'family': 'Inter, sans-serif', 'color': '#1e293b'},
+        font={'family': 'Inter, sans-serif', 'color': '#342E29'},
         margin=dict(t=20, b=40, l=60, r=20),
         height=350
     )
@@ -120,36 +151,43 @@ def create_confusion_matrix(cm, model_name):
 
 def create_roc_curves():
     fig = go.Figure()
-    
+
+    # Couleurs Palette Sahel
     fig.add_trace(go.Scatter(
         x=lda_fpr, y=lda_tpr, mode='lines',
         name=f"LDA (AUC = {lda_auc:.3f})",
-        line=dict(color='#0891b2', width=3)
+        line=dict(color='#4A7C8C', width=3)  # Bleu fleuve
     ))
-    
+
     fig.add_trace(go.Scatter(
         x=qda_fpr, y=qda_tpr, mode='lines',
         name=f"QDA (AUC = {qda_auc:.3f})",
-        line=dict(color='#8b5cf6', width=3)
+        line=dict(color='#9C6B4E', width=3)  # Ocre sahélien
     ))
-    
+
+    fig.add_trace(go.Scatter(
+        x=lgbm_fpr, y=lgbm_tpr, mode='lines',
+        name=f"LightGBM (AUC = {lgbm_auc:.3f})",
+        line=dict(color='#5A7C5E', width=3)  # Vert baobab
+    ))
+
     fig.add_trace(go.Scatter(
         x=[0, 1], y=[0, 1], mode='lines',
         name='Référence',
-        line=dict(color='#cbd5e1', width=2, dash='dash')
+        line=dict(color='#D9D0C7', width=2, dash='dash')  # Pierre calcaire
     ))
-    
+
     fig.update_layout(
         template='plotly_white',
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font={'family': 'Inter, sans-serif', 'color': '#1e293b'},
+        font={'family': 'Inter, sans-serif', 'color': '#342E29'},
         xaxis_title='Taux de Faux Positifs',
         yaxis_title='Taux de Vrais Positifs',
         margin=dict(t=20, b=40, l=40, r=20),
         height=400,
         showlegend=True,
-        legend=dict(x=0.6, y=0.1, bgcolor='rgba(255,255,255,0.8)')
+        legend=dict(x=0.6, y=0.1, bgcolor='rgba(255,255,255,0.9)')
     )
     return fig
 
@@ -166,11 +204,11 @@ layout = html.Div([
         
         # Info sur les améliorations
         html.Div([
-            html.Div("✓ QDA avec régularisation (reg_param=0.1)", className="improvement-note"),
-            html.Div(f"✓ Seuils optimisés - LDA: {lda_threshold:.3f} | QDA: {qda_threshold:.3f}", 
+            html.Div("✓ 3 modèles: LDA, QDA (reg=0.1) & LightGBM optimisé", className="improvement-note"),
+            html.Div(f"✓ Seuils optimisés - LDA: {lda_threshold:.3f} | QDA: {qda_threshold:.3f} | LGBM: {lgbm_threshold:.3f}",
                     className="improvement-note")
         ], className="improvement-info"),
-        
+
         # Métriques comparatives
         dbc.Row([
             dbc.Col([
@@ -179,7 +217,7 @@ layout = html.Div([
                         html.Span("LDA", className="model-label model-label-lda"),
                         html.Span("Linear Discriminant Analysis", className="model-name")
                     ], className="model-header"),
-                    
+
                     dbc.Row([
                         dbc.Col([
                             html.Div([
@@ -201,15 +239,15 @@ layout = html.Div([
                         ], md=4)
                     ])
                 ], className="model-card model-card-lda")
-            ], md=6),
-            
+            ], md=4),
+
             dbc.Col([
                 html.Div([
                     html.Div([
                         html.Span("QDA", className="model-label model-label-qda"),
                         html.Span("Quadratic Discriminant Analysis", className="model-name")
                     ], className="model-header"),
-                    
+
                     dbc.Row([
                         dbc.Col([
                             html.Div([
@@ -231,7 +269,37 @@ layout = html.Div([
                         ], md=4)
                     ])
                 ], className="model-card model-card-qda")
-            ], md=6)
+            ], md=4),
+
+            dbc.Col([
+                html.Div([
+                    html.Div([
+                        html.Span("LGBM", className="model-label model-label-lgbm"),
+                        html.Span("Light Gradient Boosting Machine", className="model-name")
+                    ], className="model-header"),
+
+                    dbc.Row([
+                        dbc.Col([
+                            html.Div([
+                                html.Div(f"{lgbm_accuracy:.4f}", className="metric-value"),
+                                html.Div("Accuracy", className="metric-name")
+                            ], className="metric-item")
+                        ], md=4),
+                        dbc.Col([
+                            html.Div([
+                                html.Div(f"{lgbm_f1:.4f}", className="metric-value"),
+                                html.Div("F1-Score", className="metric-name")
+                            ], className="metric-item")
+                        ], md=4),
+                        dbc.Col([
+                            html.Div([
+                                html.Div(f"{lgbm_recall:.4f}", className="metric-value"),
+                                html.Div("Recall", className="metric-name")
+                            ], className="metric-item")
+                        ], md=4)
+                    ])
+                ], className="model-card model-card-lgbm")
+            ], md=4)
         ], className="mb-4"),
         
         # Matrices de confusion
@@ -239,18 +307,26 @@ layout = html.Div([
             dbc.Col([
                 html.Div([
                     html.Div("Matrice de Confusion - LDA", className="chart-title"),
-                    dcc.Graph(figure=create_confusion_matrix(lda_cm, "LDA"), 
+                    dcc.Graph(figure=create_confusion_matrix(lda_cm, "LDA"),
                              config={'displayModeBar': False})
                 ], className="chart-card")
-            ], md=6),
-            
+            ], md=4),
+
             dbc.Col([
                 html.Div([
                     html.Div("Matrice de Confusion - QDA", className="chart-title"),
-                    dcc.Graph(figure=create_confusion_matrix(qda_cm, "QDA"), 
+                    dcc.Graph(figure=create_confusion_matrix(qda_cm, "QDA"),
                              config={'displayModeBar': False})
                 ], className="chart-card")
-            ], md=6)
+            ], md=4),
+
+            dbc.Col([
+                html.Div([
+                    html.Div("Matrice de Confusion - LightGBM", className="chart-title"),
+                    dcc.Graph(figure=create_confusion_matrix(lgbm_cm, "LGBM"),
+                             config={'displayModeBar': False})
+                ], className="chart-card")
+            ], md=4)
         ], className="mb-4"),
         
         # Courbes ROC
@@ -397,21 +473,25 @@ def predict_client(n_clicks, age, revenu, epargne, anciennete, historique,
     
     lda_proba_client = lda_model.predict_proba(client_scaled)[0, 1]
     qda_proba_client = qda_model.predict_proba(client_scaled)[0, 1]
-    
+    lgbm_proba_client = lgbm_model.predict_proba(client_scaled)[0, 1]
+
     # Utiliser le modèle sélectionné avec son seuil optimal
     if best_model == 'LDA':
         final_proba = lda_proba_client
         final_decision = 'Défaut Probable' if lda_proba_client >= lda_threshold else 'Profil Sain'
-    else:
+    elif best_model == 'QDA':
         final_proba = qda_proba_client
         final_decision = 'Défaut Probable' if qda_proba_client >= qda_threshold else 'Profil Sain'
-    
+    else:  # LGBM
+        final_proba = lgbm_proba_client
+        final_decision = 'Défaut Probable' if lgbm_proba_client >= lgbm_threshold else 'Profil Sain'
+
     risk_level = "Élevé" if final_proba >= best_threshold else "Faible"
     decision_class = 'danger' if final_proba >= best_threshold else 'success'
-    
+
     return html.Div([
         html.Div("Résultats de l'Analyse", className="results-title"),
-        
+
         dbc.Row([
             dbc.Col([
                 html.Div([
@@ -419,15 +499,23 @@ def predict_client(n_clicks, age, revenu, epargne, anciennete, historique,
                     html.Div(f"{lda_proba_client*100:.1f}%", className="proba-value"),
                     html.Div(f"Seuil: {lda_threshold:.3f}", className="proba-subtitle")
                 ], className="proba-card proba-card-lda")
-            ], md=6),
-            
+            ], md=4),
+
             dbc.Col([
                 html.Div([
                     html.Div("Modèle QDA", className="proba-label"),
                     html.Div(f"{qda_proba_client*100:.1f}%", className="proba-value"),
                     html.Div(f"Seuil: {qda_threshold:.3f}", className="proba-subtitle")
                 ], className="proba-card proba-card-qda")
-            ], md=6)
+            ], md=4),
+
+            dbc.Col([
+                html.Div([
+                    html.Div("Modèle LightGBM", className="proba-label"),
+                    html.Div(f"{lgbm_proba_client*100:.1f}%", className="proba-value"),
+                    html.Div(f"Seuil: {lgbm_threshold:.3f}", className="proba-subtitle")
+                ], className="proba-card proba-card-lgbm")
+            ], md=4)
         ], className="mb-4"),
         
         html.Div([

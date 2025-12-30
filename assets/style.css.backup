@@ -686,11 +686,6 @@ body {
     background: linear-gradient(135deg, #ffffff 0%, var(--qda-light) 100%);
 }
 
-.model-card-lgbm {
-    border-left-color: var(--lgbm-color);
-    background: linear-gradient(135deg, #ffffff 0%, var(--lgbm-light) 100%);
-}
-
 .model-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 8px 16px rgba(0,0,0,0.1);
@@ -718,10 +713,6 @@ body {
 
 .model-label-qda {
     background: var(--qda-color);
-}
-
-.model-label-lgbm {
-    background: var(--lgbm-color);
 }
 
 .model-name {
@@ -804,10 +795,6 @@ body {
 
 .best-model-qda {
     background: var(--qda-color);
-}
-
-.best-model-lgbm {
-    background: var(--lgbm-color);
 }
 
 .best-model-score {
@@ -952,10 +939,6 @@ body {
     border-left-color: var(--qda-color);
 }
 
-.proba-card-lgbm {
-    border-left-color: var(--lgbm-color);
-}
-
 .proba-card:hover {
     transform: scale(1.03);
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
@@ -1083,6 +1066,9 @@ body {
 
 .chart-card {
     animation: slideIn 0.4s ease-out;
+}
+    margin: 0 auto;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* Filtres compacts */

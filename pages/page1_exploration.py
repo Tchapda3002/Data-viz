@@ -382,7 +382,15 @@ def update_all(region, secteur, canal, montant_range, chart_type, scatter_x, sca
     gdf_plot['count'] = gdf_plot['count'].fillna(0)
     gdf_plot['taux_defaut'] = gdf_plot['taux_defaut'].fillna(0)
     
-    # Création de la carte choroplèthe
+    # Création de la carte choroplèthe (Palette Sahel)
+    sahel_choropleth_colors = [
+        [0, '#FAF7F4'],      # Sable clair (peu de clients)
+        [0.25, '#F0EBE3'],   # Beige sahel
+        [0.5, '#D9D0C7'],    # Pierre calcaire
+        [0.75, '#9C6B4E'],   # Ocre sahélien
+        [1, '#6B5D54']       # Terre sombre (beaucoup de clients)
+    ]
+
     fig_region = px.choropleth(
         gdf_plot,
         geojson=json.loads(gdf_plot.to_json()),
@@ -390,7 +398,7 @@ def update_all(region, secteur, canal, montant_range, chart_type, scatter_x, sca
         color='count',
         hover_name='NAME_1',
         hover_data={'count': True, 'taux_defaut': ':.2f'},
-        color_continuous_scale='Blues',
+        color_continuous_scale=sahel_choropleth_colors,
         labels={'count': 'Nombre de clients', 'taux_defaut': 'Taux défaut (%)'}
     )
     
@@ -413,11 +421,12 @@ def update_all(region, secteur, canal, montant_range, chart_type, scatter_x, sca
         )
     )
     
-    # Graphique secteur
+    # Graphique secteur (Palette Sahel personnalisée)
     secteur_data = filtered_df.groupby('secteur_activite').size().reset_index(name='count')
+    sahel_colors = ['#D17B47', '#5A7C5E', '#9C6B4E', '#D9A84E', '#4A7C8C', '#6B9F7B']  # Palette Sahel
     fig_secteur = px.pie(
         secteur_data, values='count', names='secteur_activite',
-        color_discrete_sequence=px.colors.qualitative.Set3,
+        color_discrete_sequence=sahel_colors,
         hole=0.4
     )
     fig_secteur.update_traces(textposition='inside', textinfo='percent+label')
@@ -430,17 +439,17 @@ def update_all(region, secteur, canal, montant_range, chart_type, scatter_x, sca
         showlegend=False
     )
     
-    # Graphique DSTI
+    # Graphique DSTI (Palette Sahel)
     if chart_type == 'hist':
         fig_dsti = px.histogram(
             filtered_df, x='dsti_pct', color='defaut_90j',
-            nbins=30, color_discrete_map={0: '#10b981', 1: '#ef4444'},
+            nbins=30, color_discrete_map={0: '#6B9F7B', 1: '#C44B3D'},  # Vert manioc / Rouge cayor
             labels={'dsti_pct': 'DSTI (%)', 'defaut_90j': 'Statut'}
         )
     else:
         fig_dsti = px.box(
             filtered_df, x='defaut_90j', y='dsti_pct',
-            color='defaut_90j', color_discrete_map={0: '#10b981', 1: '#ef4444'},
+            color='defaut_90j', color_discrete_map={0: '#6B9F7B', 1: '#C44B3D'},  # Vert manioc / Rouge cayor
             labels={'dsti_pct': 'DSTI (%)', 'defaut_90j': 'Statut'}
         )
     
@@ -454,10 +463,10 @@ def update_all(region, secteur, canal, montant_range, chart_type, scatter_x, sca
         showlegend=False
     )
     
-    # Scatter plot
+    # Scatter plot (Palette Sahel)
     fig_scatter = px.scatter(
         filtered_df, x=scatter_x, y=scatter_y, color='defaut_90j',
-        color_discrete_map={0: '#10b981', 1: '#ef4444'},
+        color_discrete_map={0: '#6B9F7B', 1: '#C44B3D'},  # Vert manioc / Rouge cayor
         labels={'defaut_90j': 'Statut'}, opacity=0.6
     )
     fig_scatter.update_traces(marker=dict(size=8))
@@ -471,15 +480,22 @@ def update_all(region, secteur, canal, montant_range, chart_type, scatter_x, sca
         showlegend=False
     )
     
-    # Matrice de corrélation
+    # Matrice de corrélation (Palette Sahel custom)
     corr_cols = [col for col in numeric_cols if col in filtered_df.columns]
     corr_matrix = filtered_df[corr_cols].corr()
-    
+
+    # Colorscale personnalisée Sahel: du rouge cayor au vert manioc en passant par beige
+    sahel_colorscale = [
+        [0, '#C44B3D'],      # Rouge cayor (corrélation -1)
+        [0.5, '#FAF7F4'],    # Sable clair (corrélation 0)
+        [1, '#5A7C5E']       # Vert baobab (corrélation +1)
+    ]
+
     fig_corr = go.Figure(data=go.Heatmap(
         z=corr_matrix.values,
         x=corr_matrix.columns,
         y=corr_matrix.columns,
-        colorscale='RdBu',
+        colorscale=sahel_colorscale,
         zmid=0,
         text=corr_matrix.values.round(2),
         texttemplate='%{text}',
