@@ -7,6 +7,8 @@ import dash
 from dash import Dash, html, dcc
 import dash_bootstrap_components as dbc
 
+
+
 app = Dash(
     __name__,
     external_stylesheets=[
@@ -17,6 +19,8 @@ app = Dash(
     use_pages=True,
     pages_folder="pages"
 )
+
+server = app.server 
 
 app.title = "Microfinance Risk Analyzer"
 
